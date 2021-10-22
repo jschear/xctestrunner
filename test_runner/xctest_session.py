@@ -216,10 +216,12 @@ class XctestSession(object):
       # The xcresult only contains raw data in Xcode 11 or later.
       if xcode_info_util.GetXcodeVersionNumber() >= 1100:
         expose_xcresult = os.path.join(self._output_dir, 'ExposeXcresult')
+        junit_xml_file = os.environ.get('XML_OUTPUT_FILE')
         try:
           xcresult_util.ExposeXcresult(result_bundle_path, expose_xcresult)
           if not self._keep_xcresult_data:
             shutil.rmtree(result_bundle_path)
+          xcresult_util.WriteJunitReport(result_bundle_path, junit_xml_file)
         except subprocess.CalledProcessError as e:
           logging.warning(e.output)
       return exit_code

@@ -19,6 +19,7 @@ import os
 import subprocess
 
 from xctestrunner.shared import ios_errors
+from xctestrunner.test_runner import junit_xml
 
 
 def ExposeXcresult(xcresult_path, output_path):
@@ -30,6 +31,40 @@ def ExposeXcresult(xcresult_path, output_path):
     xcresult_path: string, path of xcresult bundle.
     output_path: string, path of output directory.
   """
+  action_result = _GetRootActionResult(xcresult_path)
+  _ExposeDiagnostics(xcresult_path, output_path, action_result)
+  _ExposeAttachments(xcresult_path, output_path, action_result)
+
+
+def WriteJunitReport(xcresult_path, xml_report_path):
+  """Writes a JUnit XML test report based on the contents of the xcresult bundle.
+  
+  Args:
+    xcresult_path: string, path of xcresult bundle.
+    xml_report_path: string, path to which the JUnit XML report will be written.
+  """
+  action_result = _GetRootActionResult(xcresult_path)
+  testsref_id = action_result['testsRef']['id']['_value']
+  test_plan_summaries = _GetResultBundleObject(
+      xcresult_path, bundle_id=testsref_id)
+  summaries_values = test_plan_summaries['summaries']['_values']
+  if len(summaries_values) > 1:
+    raise ios_errors.XcresultError(
+        'Expected a single test plan summary in xcresult %s' %
+        test_plan_summaries)
+  test_plan_summary = summaries_values[0]
+  testable_summaries = test_plan_summary['testableSummaries']['_values']
+  if len(testable_summaries) > 1:
+    raise ios_errors.XcresultError(
+        'Expected a single testable summary in xcresult %s' %
+        testable_summaries)
+  testable_summary = testable_summaries[0]
+  tests = testable_summary['tests']['_values']
+  junit_entities = _ConvertToJunitEntities(tests)
+  junit_xml.WriteReport(junit_entities, xml_report_path)
+
+
+def _GetRootActionResult(xcresult_path):
   root_result_bundle = _GetResultBundleObject(xcresult_path, bundle_id=None)
   actions = root_result_bundle['actions']['_values']
   action_result = None
@@ -41,8 +76,7 @@ def ExposeXcresult(xcresult_path, output_path):
     raise ios_errors.XcresultError(
         'Failed to get "ActionResult" from result bundle %s' %
         root_result_bundle)
-  _ExposeDiagnostics(xcresult_path, output_path, action_result)
-  _ExposeAttachments(xcresult_path, output_path, action_result)
+  return action_result
 
 
 def _ExposeDiagnostics(xcresult_path, output_path, action_result):
@@ -130,3 +164,23 @@ def _GetFailureTestRefs(test_summary):
       summary_ref_id = test_summary['summaryRef']['id']['_value']
       failure_test_refs.append(summary_ref_id)
   return failure_test_refs
+
+
+def _ConvertToJunitEntities(tests):
+  return junit_xml.TestSuites(testsuites=[_ConvertToJunitEntity(test) for test in tests])
+
+
+def _ConvertToJunitEntity(test):
+  type = test['_type']['_name']
+  if type == "ActionTestSummaryGroup":
+    name = test['name']['_value']
+    duration = test['duration']['_value']
+    subtests = test['subtests']['_values']
+    junit_subtests = [_ConvertToJunitEntity(subtest) for subtest in subtests]
+    return junit_xml.TestSuite(name=name, duration=duration, tests=junit_subtests)
+  elif type == "ActionTestMetadata":
+    name = test['identifier']['_value']
+    duration = test['duration']['_value']
+    return junit_xml.Test(name=name, duration=duration)
+  raise ios_errors.XcresultError(
+        'Unexpected ActionTestSummaryIdentifiableObject type while parsing xcresult bundle: %s' % type)
