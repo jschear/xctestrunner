@@ -20,12 +20,12 @@ import xml.etree.ElementTree as ET
 class Test:
   def __init__(self, name, duration):
     self.name = name
-    self.duration
+    self.duration = duration
 
   def to_xml(self):
     element = ET.Element('testcase')
-    element.set('time', self.name)
-    element.set('duration', self.duration)
+    element.set('name', self.name)
+    element.set('time', self.duration)
     return element
 
 
@@ -38,8 +38,8 @@ class TestSuite:
 
   def to_xml(self):
     element = ET.Element('testsuite')
-    element.set('time', self.name)
-    element.set('duration', self.duration)
+    element.set('name', self.name)
+    element.set('time', self.duration)
     element.extend([test.to_xml() for test in self.tests])
     return element
 
